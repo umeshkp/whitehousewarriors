@@ -1,20 +1,28 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Tech stack: Python 3, Streamlit UI, pytest, Google OAuth, Google Sheets API.
+  Domain: Cricket scorekeeping with delivery-level persistence.
+  Key rules:
+  - An over has exactly 6 legal balls.
+  - wides and no-balls add extras but are not legal balls.
+  - striker/non-striker must belong to batting team roster.
+  - bowler must belong to bowling team roster.
+  - each new over requires explicit bowler selection.
+  Persistence:
+  - Use append-only writes to Google Sheets.
+  - Enforce fixed delivery header columns before appending data.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - Keep proposal focused on what/why and include cricket-scoring constraints.
+    - Explicitly list any Google auth or data persistence impacts.
+  design:
+    - Document scoring-state transitions, especially over rollover and strike changes.
+    - Include failure handling for invalid team-role selection and sheet access.
+  specs:
+    - Use SHALL language and include at least one WHEN/THEN scenario per requirement.
+    - Capture roster constraints, legal-ball behavior, and persistence schema requirements.
+  tasks:
+    - Break tasks into small, verifiable steps.
+    - Include both implementation and verification tasks for scoring logic and persistence.

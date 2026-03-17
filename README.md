@@ -1,6 +1,6 @@
-# whitehousewarriors
+# Whitehouse Warriors
 
-Whitehouse warrior cricket scoring interface.
+Streamlit-based cricket scoring interface with Google-authenticated persistence to Google Sheets.
 
 ## Features
 
@@ -43,7 +43,7 @@ The app writes/validates this fixed header schema:
 1. Install dependencies:
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -69,6 +69,21 @@ export USE_IN_MEMORY_SHEETS=true
 streamlit run app.py
 ```
 
+## Quick Usage Flow
+
+1. Sign in with Google (or enable local bypass mode).
+2. Create Team 1 and Team 2 rosters.
+3. Start innings by choosing batting team, striker, and non-striker.
+4. Validate the shared Google Sheet URL.
+5. Enter each delivery with bowler, runs, extras, and wicket flag.
+
+Behavior enforced by the app:
+- 6 legal balls per over.
+- `wide` and `no-ball` do not count as legal balls.
+- Batter runs are attributed to striker only.
+- Odd batter runs rotate strike; even runs keep strike.
+- After over completion, the next over starts automatically and requires bowler selection.
+
 ## Google OAuth Notes
 
 - Enable Google Sheets API in your Google Cloud project.
@@ -78,5 +93,11 @@ streamlit run app.py
 ## Tests
 
 ```bash
-pytest
+python3 -m pytest
+```
+
+If `pytest` is missing, install dependencies first:
+
+```bash
+pip install -r requirements.txt
 ```
