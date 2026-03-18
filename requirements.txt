@@ -5,3 +5,4 @@ google-auth-oauthlib==1.2.1
 google-api-python-client==2.164.0
 pydantic==2.10.6
 pytest==8.3.5
+playwright==1.58.0
