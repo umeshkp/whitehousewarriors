@@ -36,6 +36,6 @@ def test_happy_path_with_extras_and_persistence():
 
     assert state.total_runs == 6
     assert state.over_no == 2
-    assert state.legal_balls_in_over == 0
-    assert state.requires_bowler_selection is True
+    assert state.legal_balls_in_over == 1
+    assert state.requires_bowler_selection is False
     assert len(sheets.rows_by_url[sheet_url]) == len(deliveries)

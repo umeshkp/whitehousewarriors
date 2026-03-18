@@ -22,23 +22,23 @@ class AppConfig:
             auth_bypass=os.getenv("AUTH_BYPASS", "false").lower() == "true",
         )
 
+    def has_google_oauth_config(self) -> bool:
+        return bool(self.google_oauth_client_config_json and self.google_oauth_redirect_uri)
+
     def validate_startup(self) -> list[str]:
         errors: list[str] = []
-        if self.auth_bypass:
+        if self.auth_bypass or not self.google_oauth_client_config_json:
             return errors
-        if not self.google_oauth_client_config_json:
-            errors.append("GOOGLE_OAUTH_CLIENT_CONFIG_JSON is required when AUTH_BYPASS is false.")
-        else:
-            try:
-                parsed = json.loads(self.google_oauth_client_config_json)
-                if not isinstance(parsed, dict):
-                    errors.append("GOOGLE_OAUTH_CLIENT_CONFIG_JSON must be a JSON object.")
-                elif "web" not in parsed and "installed" not in parsed:
-                    errors.append("OAuth client config must include a 'web' or 'installed' object.")
-            except json.JSONDecodeError:
-                errors.append("GOOGLE_OAUTH_CLIENT_CONFIG_JSON is not valid JSON.")
-        if not self.google_oauth_redirect_uri:
-            errors.append("GOOGLE_OAUTH_REDIRECT_URI is required when AUTH_BYPASS is false.")
+        try:
+            parsed = json.loads(self.google_oauth_client_config_json)
+            if not isinstance(parsed, dict):
+                errors.append("GOOGLE_OAUTH_CLIENT_CONFIG_JSON must be a JSON object.")
+            elif "web" not in parsed and "installed" not in parsed:
+                errors.append("OAuth client config must include a 'web' or 'installed' object.")
+        except json.JSONDecodeError:
+            errors.append("GOOGLE_OAUTH_CLIENT_CONFIG_JSON is not valid JSON.")
+        if self.google_oauth_client_config_json and not self.google_oauth_redirect_uri:
+            errors.append("GOOGLE_OAUTH_REDIRECT_URI is required when GOOGLE_OAUTH_CLIENT_CONFIG_JSON is set.")
         return errors
 
     def oauth_client_config(self) -> dict[str, Any]:

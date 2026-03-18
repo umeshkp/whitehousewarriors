@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 from dataclasses import asdict
+from typing import Any
 
 import streamlit as st
 
-from cricket_scoring.auth import GoogleAuthManager, credentials_from_session
+from cricket_scoring.auth import AUTH_MODE_GOOGLE, AUTH_MODE_LOCAL, GoogleAuthManager, credentials_from_session
 from cricket_scoring.config import AppConfig
 from cricket_scoring.engine import apply_delivery
+from cricket_scoring.local_store import LocalScoringStore, innings_state_from_dict, innings_state_to_dict
 from cricket_scoring.models import DeliveryInput, InningsState, ValidationError, create_initial_state
 from cricket_scoring.sheets import GSpreadSheetsService, InMemorySheetsService, REQUIRED_COLUMNS, SheetsServiceError
 
@@ -27,8 +29,73 @@ def _get_state() -> InningsState | None:
     return st.session_state.get("innings_state")
 
 
-def _set_state(state: InningsState) -> None:
+def _set_state(state: InningsState | None) -> None:
+    if state is None:
+        st.session_state.pop("innings_state", None)
+        return
     st.session_state["innings_state"] = state
+
+
+def _get_local_store() -> LocalScoringStore:
+    if "local_store" not in st.session_state:
+        st.session_state["local_store"] = LocalScoringStore()
+    return st.session_state["local_store"]
+
+
+def _snapshot_app_state() -> None:
+    store = _get_local_store()
+    innings_state = _get_state()
+    payload: dict[str, Any] = {
+        "team1_name": st.session_state.get("team1_name"),
+        "team2_name": st.session_state.get("team2_name"),
+        "team1_players": st.session_state.get("team1_players"),
+        "team2_players": st.session_state.get("team2_players"),
+        "team1_players_list": st.session_state.get("team1_players_list"),
+        "team2_players_list": st.session_state.get("team2_players_list"),
+        "deliveries": st.session_state.get("deliveries", []),
+        "auth_mode": st.session_state.get("auth_mode", AUTH_MODE_LOCAL),
+        "sheet_url": st.session_state.get("sheet_url", ""),
+        "sheet_ready": bool(st.session_state.get("sheet_ready", False)),
+        "local_match_id": st.session_state.get("local_match_id"),
+        "match_ended": bool(st.session_state.get("match_ended", False)),
+        "innings_state": innings_state_to_dict(innings_state) if innings_state else None,
+    }
+    store.snapshot_state(payload)
+
+
+def _restore_snapshot_once() -> None:
+    if st.session_state.get("snapshot_restored"):
+        return
+    st.session_state["snapshot_restored"] = True
+
+    snapshot = _get_local_store().load_snapshot()
+    if not snapshot:
+        return
+
+    for key in (
+        "team1_name",
+        "team2_name",
+        "team1_players",
+        "team2_players",
+        "team1_players_list",
+        "team2_players_list",
+        "deliveries",
+        "sheet_url",
+        "sheet_ready",
+        "local_match_id",
+        "match_ended",
+    ):
+        if key in snapshot and key not in st.session_state:
+            st.session_state[key] = snapshot[key]
+
+    if "auth_mode" in snapshot and "auth_mode" not in st.session_state:
+        st.session_state["auth_mode"] = snapshot["auth_mode"]
+
+    if snapshot.get("innings_state") and "innings_state" not in st.session_state:
+        try:
+            st.session_state["innings_state"] = innings_state_from_dict(snapshot["innings_state"])
+        except Exception:
+            pass
 
 
 def _get_sheets_service(config: AppConfig):
@@ -41,13 +108,22 @@ def _get_sheets_service(config: AppConfig):
     return GSpreadSheetsService(credentials)
 
 
-def render_auth(config: AppConfig) -> bool:
+def render_auth(config: AppConfig) -> str:
     st.subheader("Login")
     auth_manager = GoogleAuthManager(config)
-    return auth_manager.render_auth_panel()
+    mode = auth_manager.render_login_controls()
+    st.session_state["auth_mode"] = mode
+    return mode
 
 
-def render_team_setup() -> None:
+def render_mode_indicator(mode: str) -> None:
+    if mode == AUTH_MODE_GOOGLE:
+        st.info("Scoring mode: Google-authenticated")
+    else:
+        st.info("Scoring mode: Local CSV fallback")
+
+
+def render_team_setup(mode: str) -> None:
     st.subheader("Team Setup")
 
     with st.form("team_setup_form"):
@@ -84,6 +160,7 @@ def render_team_setup() -> None:
                     "team2_players_list": t2,
                 }
             )
+            _snapshot_app_state()
             st.success("Teams saved.")
 
     team1_players = st.session_state.get("team1_players_list", [])
@@ -126,12 +203,20 @@ def render_team_setup() -> None:
             )
             _set_state(innings_state)
             st.session_state["deliveries"] = []
+            st.session_state["match_ended"] = False
+            if mode == AUTH_MODE_LOCAL:
+                _get_local_store().initialize_match_csv(innings_state.match.match_id)
+                st.session_state["local_match_id"] = innings_state.match.match_id
+            _snapshot_app_state()
             st.success("Innings initialized.")
         except ValidationError as exc:
             st.error(str(exc))
 
 
-def render_sheet_config(config: AppConfig) -> None:
+def render_sheet_config(config: AppConfig, mode: str) -> None:
+    if mode != AUTH_MODE_GOOGLE:
+        return
+
     st.subheader("Google Sheet")
     sheet_url = st.text_input("Shared Google Sheet URL", value=st.session_state.get("sheet_url", config.google_sheet_url))
     st.session_state["sheet_url"] = sheet_url.strip()
@@ -144,9 +229,11 @@ def render_sheet_config(config: AppConfig) -> None:
                 service.allow_url(st.session_state["sheet_url"])
             service.validate_sheet(st.session_state["sheet_url"])
             st.session_state["sheet_ready"] = True
+            _snapshot_app_state()
             st.success("Google Sheet is ready for scoring persistence.")
         except (SheetsServiceError, ValidationError) as exc:
             st.session_state["sheet_ready"] = False
+            _snapshot_app_state()
             st.error(str(exc))
 
 
@@ -160,7 +247,7 @@ def render_scoreboard(state: InningsState) -> None:
     st.write(f"Striker: **{state.striker}** | Non-striker: **{state.non_striker}**")
 
 
-def render_delivery_entry(config: AppConfig) -> None:
+def render_delivery_entry(config: AppConfig, mode: str) -> None:
     state = _get_state()
     if state is None:
         st.info("Complete team setup and start innings to begin scoring.")
@@ -168,7 +255,7 @@ def render_delivery_entry(config: AppConfig) -> None:
 
     render_scoreboard(state)
 
-    if not st.session_state.get("sheet_ready"):
+    if mode == AUTH_MODE_GOOGLE and not st.session_state.get("sheet_ready"):
         st.warning("Validate Google Sheet access before submitting deliveries.")
         return
 
@@ -204,6 +291,7 @@ def render_delivery_entry(config: AppConfig) -> None:
         submitted = st.form_submit_button("Submit delivery", use_container_width=True)
 
     if not submitted:
+        _render_delivery_log_and_download(mode, state)
         return
 
     try:
@@ -217,18 +305,54 @@ def render_delivery_entry(config: AppConfig) -> None:
             is_wicket=wicket,
         )
         next_state, record = apply_delivery(state, delivery)
-        sheets_service = _get_sheets_service(config)
-        sheets_service.append_delivery(st.session_state["sheet_url"], record)
+
+        if mode == AUTH_MODE_GOOGLE:
+            sheets_service = _get_sheets_service(config)
+            sheets_service.append_delivery(st.session_state["sheet_url"], record)
+        else:
+            _get_local_store().append_delivery(record)
+            st.session_state["local_match_id"] = record.match_id
+
         _set_state(next_state)
         st.session_state.setdefault("deliveries", []).append(asdict(record))
+        _snapshot_app_state()
         st.success("Delivery saved.")
     except (ValidationError, SheetsServiceError) as exc:
         st.error(str(exc))
 
+    _render_delivery_log_and_download(mode, _get_state())
+
+
+def _render_delivery_log_and_download(mode: str, state: InningsState | None) -> None:
     deliveries = st.session_state.get("deliveries", [])
     if deliveries:
         st.markdown("### Delivery Log")
         st.dataframe(deliveries, use_container_width=True)
+
+    if mode != AUTH_MODE_LOCAL or not deliveries:
+        return
+
+    if not st.session_state.get("match_ended"):
+        if st.button("End Match", key="end-match", use_container_width=True):
+            st.session_state["match_ended"] = True
+            _snapshot_app_state()
+            st.rerun()
+        return
+
+    match_id = st.session_state.get("local_match_id")
+    if not match_id and state:
+        match_id = state.match.match_id
+    if not match_id:
+        return
+
+    csv_bytes = _get_local_store().get_csv_bytes(match_id)
+    st.download_button(
+        "Download Scoring CSV",
+        data=csv_bytes,
+        file_name=f"match_{match_id}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
 
 
 def main() -> None:
@@ -242,12 +366,12 @@ def main() -> None:
             st.error(err)
         st.stop()
 
-    if not render_auth(config):
-        st.stop()
-
-    render_team_setup()
-    render_sheet_config(config)
-    render_delivery_entry(config)
+    _restore_snapshot_once()
+    mode = render_auth(config)
+    render_mode_indicator(mode)
+    render_team_setup(mode)
+    render_sheet_config(config, mode)
+    render_delivery_entry(config, mode)
 
 
 if __name__ == "__main__":
