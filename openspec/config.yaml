@@ -10,19 +10,27 @@ context: |
   - bowler must belong to bowling team roster.
   - each new over requires explicit bowler selection.
   Persistence:
-  - Use append-only writes to Google Sheets.
+  - In authenticated mode, use append-only writes to Google Sheets.
+  - In unauthenticated mode, persist scoring in local CSV with snapshot restore support.
   - Enforce fixed delivery header columns before appending data.
+  Auth and identity:
+  - Google login is optional; scoring must remain available without login.
+  - Support popup-style Google account selection.
+  - Accept all valid Google accounts (no domain restriction).
+  - Display signed-in identity as name text only.
 
 rules:
   proposal:
     - Keep proposal focused on what/why and include cricket-scoring constraints.
-    - Explicitly list any Google auth or data persistence impacts.
+    - Explicitly list Google auth impacts and local CSV fallback impacts.
   design:
     - Document scoring-state transitions, especially over rollover and strike changes.
-    - Include failure handling for invalid team-role selection and sheet access.
+    - Include failure handling for invalid team-role selection, sheet access, and OAuth callback errors.
+    - Specify behavior across auth modes (google-authenticated vs local-csv-fallback).
   specs:
     - Use SHALL language and include at least one WHEN/THEN scenario per requirement.
     - Capture roster constraints, legal-ball behavior, and persistence schema requirements.
+    - Include requirements for optional login, auth persistence, and local CSV download flow where applicable.
   tasks:
     - Break tasks into small, verifiable steps.
-    - Include both implementation and verification tasks for scoring logic and persistence.
+    - Include both implementation and verification tasks for scoring logic, auth behavior, and persistence across both modes.
