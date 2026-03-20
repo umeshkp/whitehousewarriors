@@ -199,3 +199,35 @@ def test_new_over_without_bowler_is_blocked():
         assert False, "expected ValidationError"
     except ValidationError as exc:
         assert "Bowler must belong" in str(exc) or "Select a bowler" in str(exc)
+
+
+def test_create_initial_state_requires_two_batting_players():
+    try:
+        create_initial_state(
+            batting_team_name="Team-1",
+            batting_players=["player-1"],
+            bowling_team_name="Team-2",
+            bowling_players=["player-4", "player-5"],
+            striker="player-1",
+            non_striker="player-2",
+        )
+        assert False, "expected ValidationError"
+    except ValidationError as exc:
+        assert "at least 2 players" in str(exc)
+
+
+def test_create_initial_state_normalizes_player_input():
+    state = create_initial_state(
+        batting_team_name=" Team-1 ",
+        batting_players=[" player-1 ", "player-2", "player-2", "  "],
+        bowling_team_name=" Team-2 ",
+        bowling_players=[" player-4 ", "player-4", "player-5"],
+        striker=" player-1 ",
+        non_striker="player-2",
+    )
+
+    assert state.match.batting_team.name == "Team-1"
+    assert state.match.batting_team.players == ["player-1", "player-2"]
+    assert state.match.bowling_team.players == ["player-4", "player-5"]
+    assert state.striker == "player-1"
+    assert state.non_striker == "player-2"

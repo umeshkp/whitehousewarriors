@@ -15,14 +15,16 @@ context: |
   - Enforce fixed delivery header columns before appending data.
   Auth and identity:
   - Google login is optional; scoring must remain available without login.
-  - Support popup-style Google account selection.
-  - Accept all valid Google accounts (no domain restriction).
+  - Support Google-hosted account selection flow from a "Continue with Google" action.
+  - Allow runtime OAuth configuration inputs (client JSON + redirect URI) in the UI.
+  - Authenticated mode requires Gmail accounts only (`@gmail.com`).
+  - Non-Gmail login attempts MUST fall back to local mode with a recoverable message.
   - Display signed-in identity as name text only.
 
 rules:
   proposal:
     - Keep proposal focused on what/why and include cricket-scoring constraints.
-    - Explicitly list Google auth impacts and local CSV fallback impacts.
+    - Explicitly list Google auth impacts, Gmail-verification impacts, and local CSV fallback impacts.
   design:
     - Document scoring-state transitions, especially over rollover and strike changes.
     - Include failure handling for invalid team-role selection, sheet access, and OAuth callback errors.
@@ -30,7 +32,7 @@ rules:
   specs:
     - Use SHALL language and include at least one WHEN/THEN scenario per requirement.
     - Capture roster constraints, legal-ball behavior, and persistence schema requirements.
-    - Include requirements for optional login, auth persistence, and local CSV download flow where applicable.
+    - Include requirements for optional login, Gmail verification, auth persistence, runtime OAuth config inputs, and local CSV download flow where applicable.
   tasks:
     - Break tasks into small, verifiable steps.
-    - Include both implementation and verification tasks for scoring logic, auth behavior, and persistence across both modes.
+    - Include both implementation and verification tasks for scoring logic, auth behavior, Gmail verification, and persistence across both modes.

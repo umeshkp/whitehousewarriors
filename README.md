@@ -1,6 +1,6 @@
 # Whitehouse Warriors
 
-Streamlit-based cricket scoring interface with optional Google login and dual persistence modes.
+Streamlit-based cricket scoring app with optional Google sign-in and dual persistence modes.
 
 ## Features
 
@@ -11,11 +11,12 @@ Streamlit-based cricket scoring interface with optional Google login and dual pe
 - Extras (`wide`, `no-ball`) are tracked separately and are not legal balls.
 - Automatic over rollover after 6 legal balls.
 - New over blocks next delivery until bowler is selected.
-- Popup-style Google account authentication (OAuth) with account chooser.
 - Optional "Continue without login" local mode.
 - Name-only signed-in identity display.
+- Gmail-only authenticated mode (`@gmail.com` required).
 - Google-authenticated persistence to Google Sheets.
 - Local CSV persistence fallback with browser CSV download.
+- Local snapshot restore for match state and auth/runtime login config.
 
 ## Google Sheet Columns
 
@@ -55,18 +56,9 @@ Install test/development tooling (optional):
 
 ```bash
 pip install -r requirements-dev.txt
-python3 -m playwright install
 ```
 
-2. Configure environment variables (Google OAuth is optional):
-
-```bash
-export GOOGLE_OAUTH_CLIENT_CONFIG_JSON='<oauth-client-json>'
-export GOOGLE_OAUTH_REDIRECT_URI='http://localhost:8501'
-export GOOGLE_SHEET_URL='https://docs.google.com/spreadsheets/d/<sheet-id>/edit#gid=0'
-```
-
-3. Optional local bypass/development modes:
+2. Optional local bypass/development modes:
 
 ```bash
 export AUTH_BYPASS=true
@@ -74,7 +66,7 @@ export USE_IN_MEMORY_SHEETS=true
 export LOCAL_SCORING_DIR='.local_scoring'
 ```
 
-4. Run Streamlit:
+3. Run Streamlit:
 
 ```bash
 streamlit run app.py
@@ -100,17 +92,18 @@ Behavior enforced by the app:
 Mode behavior:
 - `google-authenticated`: writes deliveries to Google Sheets once sheet access is validated.
 - `local-csv-fallback`: writes deliveries to local CSV (`.local_scoring/`) and enables CSV download at match end.
-- Login state and local scoring snapshot persist across browser refresh and UI restarts.
+- Local scoring snapshot persists across browser refresh/UI restarts.
+- Auth state and runtime OAuth settings are restored from local state when available.
 
-## Google OAuth Notes
+## Google Login Notes
 
 - Enable Google Sheets API in your Google Cloud project.
 - Configure OAuth consent screen and add your redirect URI.
 - Share the target Google Sheet with the authenticated Google account.
 - Authenticated mode accepts Gmail accounts only (`@gmail.com`).
-- **BREAKING**: Non-Gmail Google accounts are rejected for authenticated mode and continue in local mode.
-- After clicking `Continue with Google`, account selection and credentials are handled on Google-hosted screens.
-- To sign in with a different account, use Google popup option `Use another account`.
+- Non-Gmail Google accounts are rejected for authenticated mode and continue in local mode.
+- Credentials are entered only on Google-hosted sign-in pages.
+- To sign in with a different account, use Google's `Use another account` flow.
 
 ## Troubleshooting
 
