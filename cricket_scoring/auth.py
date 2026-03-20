@@ -23,6 +23,8 @@ SCOPES = [
 
 AUTH_MODE_GOOGLE = "google-authenticated"
 AUTH_MODE_LOCAL = "local-csv-fallback"
+RUNTIME_OAUTH_CLIENT_CONFIG_KEY = "runtime_google_oauth_client_config_json"
+RUNTIME_OAUTH_REDIRECT_URI_KEY = "runtime_google_oauth_redirect_uri"
 
 
 class GoogleAuthManager:
@@ -31,17 +33,30 @@ class GoogleAuthManager:
         self._auth_state_path = Path(os.getenv("LOCAL_AUTH_STATE_FILE", ".local_scoring/auth_state.json"))
         self._auth_state_path.parent.mkdir(parents=True, exist_ok=True)
 
+    def _runtime_oauth_values(self) -> tuple[str, str]:
+        return (
+            str(st.session_state.get(RUNTIME_OAUTH_CLIENT_CONFIG_KEY, "")).strip(),
+            str(st.session_state.get(RUNTIME_OAUTH_REDIRECT_URI_KEY, "")).strip(),
+        )
+
+    def _effective_config(self) -> AppConfig:
+        runtime_client, runtime_redirect = self._runtime_oauth_values()
+        if runtime_client or runtime_redirect:
+            return self._config.with_runtime_oauth(runtime_client, runtime_redirect)
+        return self._config
+
     def _build_flow(self, state: str | None = None) -> Flow:
+        effective_config = self._effective_config()
         flow = Flow.from_client_config(
-            self._config.oauth_client_config(),
+            effective_config.oauth_client_config(),
             scopes=SCOPES,
             state=state,
         )
-        flow.redirect_uri = self._config.google_oauth_redirect_uri
+        flow.redirect_uri = effective_config.google_oauth_redirect_uri
         return flow
 
     def has_google_login(self) -> bool:
-        return self._config.auth_bypass or self._config.has_google_oauth_config()
+        return self._config.auth_bypass or self._effective_config().has_google_oauth_config()
 
     def is_authenticated(self) -> bool:
         if self._config.auth_bypass:
@@ -87,6 +102,8 @@ class GoogleAuthManager:
         payload = {
             "google_credentials": st.session_state.get("google_credentials"),
             "google_profile": st.session_state.get("google_profile"),
+            RUNTIME_OAUTH_CLIENT_CONFIG_KEY: st.session_state.get(RUNTIME_OAUTH_CLIENT_CONFIG_KEY, ""),
+            RUNTIME_OAUTH_REDIRECT_URI_KEY: st.session_state.get(RUNTIME_OAUTH_REDIRECT_URI_KEY, ""),
         }
         self._auth_state_path.write_text(json.dumps(payload), encoding="utf-8")
         try:
@@ -101,6 +118,12 @@ class GoogleAuthManager:
             data = json.loads(self._auth_state_path.read_text(encoding="utf-8"))
             creds = data.get("google_credentials")
             profile = data.get("google_profile")
+            runtime_client = str(data.get(RUNTIME_OAUTH_CLIENT_CONFIG_KEY, "")).strip()
+            runtime_redirect = str(data.get(RUNTIME_OAUTH_REDIRECT_URI_KEY, "")).strip()
+            if runtime_client:
+                st.session_state[RUNTIME_OAUTH_CLIENT_CONFIG_KEY] = runtime_client
+            if runtime_redirect:
+                st.session_state[RUNTIME_OAUTH_REDIRECT_URI_KEY] = runtime_redirect
             if creds and profile:
                 st.session_state["google_credentials"] = creds
                 st.session_state["google_profile"] = profile
@@ -114,11 +137,48 @@ class GoogleAuthManager:
         st.session_state.pop("oauth_state", None)
         st.session_state.pop("auth_bypass_user", None)
         st.session_state["auth_mode"] = AUTH_MODE_LOCAL
-        if self._auth_state_path.exists():
+        runtime_client, runtime_redirect = self._runtime_oauth_values()
+        if runtime_client or runtime_redirect:
+            self._persist_auth_state()
+        elif self._auth_state_path.exists():
             try:
                 self._auth_state_path.unlink()
             except OSError:
                 pass
+
+    def _save_runtime_oauth_inputs(self, client_config_json: str, redirect_uri: str) -> list[str]:
+        errors = AppConfig.validate_oauth_inputs(client_config_json, redirect_uri)
+        if errors:
+            return errors
+        st.session_state[RUNTIME_OAUTH_CLIENT_CONFIG_KEY] = client_config_json.strip()
+        st.session_state[RUNTIME_OAUTH_REDIRECT_URI_KEY] = redirect_uri.strip()
+        self._persist_auth_state()
+        return []
+
+    def _render_oauth_setup_controls(self) -> None:
+        runtime_client, runtime_redirect = self._runtime_oauth_values()
+        default_client = runtime_client or self._config.google_oauth_client_config_json
+        default_redirect = runtime_redirect or self._config.google_oauth_redirect_uri or "http://localhost:8501"
+        client_config_json = st.text_area(
+            "Google OAuth Client Config JSON",
+            value=default_client,
+            height=120,
+            key="google-oauth-client-config-input",
+        )
+        redirect_uri = st.text_input(
+            "Google OAuth Redirect URI",
+            value=default_redirect,
+            key="google-oauth-redirect-uri-input",
+        )
+        st.caption("Use Google popup sign-in. Account and password entry happens on Google-hosted screens.")
+        if st.button("Save Google Login Settings", key="save-google-login-settings"):
+            errors = self._save_runtime_oauth_inputs(client_config_json, redirect_uri)
+            if errors:
+                st.session_state["auth_error"] = "Google login configuration is invalid: " + " ".join(errors)
+            else:
+                st.session_state.pop("auth_error", None)
+                st.success("Google login settings saved. You can continue with Google.")
+                st.rerun()
 
     def _begin_google_auth(self) -> str | None:
         try:
@@ -192,10 +252,11 @@ class GoogleAuthManager:
                 st.rerun()
             return self.current_mode()
 
-        if self._config.has_google_oauth_config():
+        if self._effective_config().has_google_oauth_config():
             self._handle_oauth_callback()
         else:
-            st.info("Google login is not configured. You can continue in local scoring mode.")
+            st.info("Google login is not configured. Add OAuth settings below or continue in local scoring mode.")
+            self._render_oauth_setup_controls()
 
         if self.is_authenticated():
             profile = st.session_state.get("google_profile", {})
@@ -208,10 +269,14 @@ class GoogleAuthManager:
         if err := st.session_state.get("auth_error"):
             st.error(err)
 
-        if self._config.has_google_oauth_config():
+        if self._effective_config().has_google_oauth_config():
             auth_url = self._begin_google_auth()
             if auth_url:
                 st.link_button("Continue with Google", auth_url, use_container_width=True)
+                st.caption("Use another account in the Google popup if needed.")
+                st.caption("Google email/password is entered on Google-hosted pages, not in this app.")
+        else:
+            st.caption("Google sign-in is unavailable until valid OAuth settings are saved.")
 
         if st.button("Continue without login", key="continue-local"):
             self.clear_auth_state()
