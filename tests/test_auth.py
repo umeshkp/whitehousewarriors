@@ -91,18 +91,73 @@ def _make_id_token(payload: dict[str, str]) -> str:
     return f"{header}.{body}.sig"
 
 
-def test_oauth_state_mismatch_rejected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def test_non_gmail_account_is_rejected_and_kept_local(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    fake_st = FakeStreamlit()
+    fake_st.session_state["oauth_state"] = "nonce"
+    fake_st.query_params.update({"code": "abc", "state": "nonce"})
+    monkeypatch.setenv("LOCAL_AUTH_STATE_FILE", str(tmp_path / "auth_state.json"))
+    monkeypatch.setattr("cricket_scoring.auth.st", fake_st)
+
+    id_token = _make_id_token({"sub": "123", "email": "user@company.com", "name": "Umesh"})
+    creds = SimpleNamespace(
+        token="t",
+        refresh_token="r",
+        token_uri="uri",
+        client_id="id",
+        client_secret="secret",
+        scopes=["openid"],
+        id_token=id_token,
+    )
+
+    class FakeFlow:
+        def __init__(self):
+            self.credentials = creds
+
+        def fetch_token(self, code: str) -> None:
+            assert code == "abc"
+
+    manager = GoogleAuthManager(_config())
+    monkeypatch.setattr(manager, "_build_flow", lambda state=None: FakeFlow())
+    manager._handle_oauth_callback()
+
+    assert "gmail account is required" in fake_st.session_state["auth_error"].lower()
+    assert fake_st.session_state["auth_mode"] == AUTH_MODE_LOCAL
+    assert "google_credentials" not in fake_st.session_state
+    assert "google_profile" not in fake_st.session_state
+
+
+def test_oauth_state_mismatch_no_longer_blocks_login(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     fake_st = FakeStreamlit()
     fake_st.session_state["oauth_state"] = "expected"
     fake_st.query_params.update({"code": "abc", "state": "incoming"})
     monkeypatch.setenv("LOCAL_AUTH_STATE_FILE", str(tmp_path / "auth_state.json"))
     monkeypatch.setattr("cricket_scoring.auth.st", fake_st)
 
+    id_token = _make_id_token({"sub": "123", "email": "user@gmail.com", "name": "Umesh"})
+    creds = SimpleNamespace(
+        token="t",
+        refresh_token="r",
+        token_uri="uri",
+        client_id="id",
+        client_secret="secret",
+        scopes=["openid"],
+        id_token=id_token,
+    )
+
+    class FakeFlow:
+        def __init__(self):
+            self.credentials = creds
+
+        def fetch_token(self, code: str) -> None:
+            assert code == "abc"
+
     manager = GoogleAuthManager(_config())
+    monkeypatch.setattr(manager, "_build_flow", lambda state=None: FakeFlow())
+
     manager._handle_oauth_callback()
 
-    assert "state mismatch" in fake_st.session_state["auth_error"].lower()
-    assert "google_credentials" not in fake_st.session_state
+    assert fake_st.session_state["auth_mode"] == AUTH_MODE_GOOGLE
+    assert "auth_error" not in fake_st.session_state
 
 
 def test_oauth_callback_success_sets_profile_and_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -230,6 +285,27 @@ def test_auth_state_persists_across_restart(monkeypatch: pytest.MonkeyPatch, tmp
     assert st2.session_state["auth_mode"] == AUTH_MODE_GOOGLE
 
 
+def test_non_gmail_auth_state_not_restored_as_authenticated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    auth_file = tmp_path / "auth_state.json"
+    monkeypatch.setenv("LOCAL_AUTH_STATE_FILE", str(auth_file))
+
+    st1 = FakeStreamlit()
+    st1.session_state["google_credentials"] = {"token": "t", "id_token": "abc"}
+    st1.session_state["google_profile"] = {"sub": "1", "email": "user@company.com", "name": "User"}
+    monkeypatch.setattr("cricket_scoring.auth.st", st1)
+    manager = GoogleAuthManager(_config())
+    manager._persist_auth_state()
+
+    st2 = FakeStreamlit()
+    monkeypatch.setattr("cricket_scoring.auth.st", st2)
+    manager2 = GoogleAuthManager(_config())
+    manager2.restore_auth_state()
+
+    assert st2.session_state.get("auth_mode") == AUTH_MODE_LOCAL
+    assert "google_profile" not in st2.session_state
+    assert "google_credentials" not in st2.session_state
+
+
 def test_runtime_oauth_config_saved_and_restored(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     auth_file = tmp_path / "auth_state.json"
     monkeypatch.setenv("LOCAL_AUTH_STATE_FILE", str(auth_file))
@@ -301,6 +377,16 @@ def test_extract_profile_allows_consumer_google_account(monkeypatch: pytest.Monk
     profile = manager._extract_profile(creds)
 
     assert profile["email"].endswith("@gmail.com")
+
+
+def test_extract_profile_rejects_missing_fields(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    fake_st = FakeStreamlit()
+    monkeypatch.setenv("LOCAL_AUTH_STATE_FILE", str(tmp_path / "auth_state.json"))
+    monkeypatch.setattr("cricket_scoring.auth.st", fake_st)
+    manager = GoogleAuthManager(_config())
+
+    with pytest.raises(ValidationError):
+        manager._extract_profile(SimpleNamespace(id_token=_make_id_token({"sub": "x", "name": "Name"})))
 
 
 def test_extract_profile_raises_for_invalid_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

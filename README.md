@@ -107,7 +107,8 @@ Mode behavior:
 - Enable Google Sheets API in your Google Cloud project.
 - Configure OAuth consent screen and add your redirect URI.
 - Share the target Google Sheet with the authenticated Google account.
-- All valid Google accounts are accepted (no domain allowlist restrictions).
+- Authenticated mode accepts Gmail accounts only (`@gmail.com`).
+- **BREAKING**: Non-Gmail Google accounts are rejected for authenticated mode and continue in local mode.
 - After clicking `Continue with Google`, account selection and credentials are handled on Google-hosted screens.
 - To sign in with a different account, use Google popup option `Use another account`.
 
@@ -115,7 +116,7 @@ Mode behavior:
 
 - `Google login is not configured`: use the in-app OAuth settings inputs or set `GOOGLE_OAUTH_CLIENT_CONFIG_JSON` and `GOOGLE_OAUTH_REDIRECT_URI`.
 - `Google login configuration is invalid`: verify JSON includes `web` or `installed`, and redirect URI is a full URL.
-- `OAuth state mismatch`: retry `Continue with Google` and complete login in one tab/window.
+- `Gmail account is required`: sign in with a `@gmail.com` account or continue without login.
 - If unauthenticated mode is active, scoring still works and is persisted locally to CSV.
 
 ## Tests

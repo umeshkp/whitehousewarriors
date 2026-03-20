@@ -1,8 +1,5 @@
-# optional-auth-scoring-mode Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change google-popup-login-auth. Update Purpose after archive.
-## Requirements
 ### Requirement: Scoring shall be available without Google authentication
 The system SHALL allow users to start and continue scoring even when Google login is skipped, cancelled, unavailable, or rejected by Gmail verification.
 
@@ -15,15 +12,15 @@ The system SHALL allow users to start and continue scoring even when Google logi
 - **THEN** scoring inputs and match progression remain enabled in local mode
 
 ### Requirement: Dual-mode identity state indicator
-The system SHALL display current scoring mode as either authenticated Google mode or unauthenticated local mode, and SHALL distinguish between "Google not configured" and "Google login failed" states while keeping local mode available.
+The system SHALL display current scoring mode as either authenticated Google mode or unauthenticated local mode.
 
-#### Scenario: Local mode shown when Google is not configured
-- **WHEN** Google sign-in settings are unavailable or invalid
-- **THEN** the interface shows local scoring mode status with guidance to configure Google login and does not block scoring actions
+#### Scenario: Local scoring mode is shown
+- **WHEN** the user is not authenticated
+- **THEN** the interface shows local scoring mode status and does not block scoring actions
 
-#### Scenario: Local mode shown after login failure
-- **WHEN** Google sign-in callback/token exchange fails
-- **THEN** the interface remains in local scoring mode and surfaces a recoverable retry message for Google login
+#### Scenario: Gmail verification rejection is shown as local mode
+- **WHEN** Gmail verification fails during login completion
+- **THEN** the interface remains in local scoring mode and displays a Gmail-required status/error message
 
 ### Requirement: Logout transitions to local scoring mode
 The system SHALL transition authenticated sessions to local scoring mode after logout without interrupting scoring capability.

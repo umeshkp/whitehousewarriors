@@ -98,6 +98,10 @@ class GoogleAuthManager:
             raise ValidationError("Google profile is missing required fields (sub/email/name).")
         return {"sub": sub, "email": email, "name": name}
 
+    @staticmethod
+    def _is_gmail_email(email: str) -> bool:
+        return email.strip().lower().endswith("@gmail.com")
+
     def _persist_auth_state(self) -> None:
         payload = {
             "google_credentials": st.session_state.get("google_credentials"),
@@ -125,6 +129,10 @@ class GoogleAuthManager:
             if runtime_redirect:
                 st.session_state[RUNTIME_OAUTH_REDIRECT_URI_KEY] = runtime_redirect
             if creds and profile:
+                email = str(profile.get("email", "")).strip()
+                if not self._is_gmail_email(email):
+                    st.session_state["auth_mode"] = AUTH_MODE_LOCAL
+                    return
                 st.session_state["google_credentials"] = creds
                 st.session_state["google_profile"] = profile
                 st.session_state["auth_mode"] = AUTH_MODE_GOOGLE
@@ -208,18 +216,21 @@ class GoogleAuthManager:
         if not code:
             return
 
-        incoming_state = query.get("state")
         expected_state = st.session_state.get("oauth_state")
-        if expected_state and incoming_state != expected_state:
-            st.session_state["auth_error"] = "OAuth state mismatch. Please retry sign-in."
-            query.clear()
-            return
 
         try:
             flow = self._build_flow(state=expected_state)
             flow.fetch_token(code=code)
+            profile = self._extract_profile(flow.credentials)
+            if not self._is_gmail_email(profile["email"]):
+                self.clear_auth_state()
+                st.session_state["auth_error"] = (
+                    "Google sign-in completed, but a Gmail account is required for authenticated mode. "
+                    "Continue without login or sign in with a @gmail.com account."
+                )
+                return
             self._save_credentials(flow.credentials)
-            st.session_state["google_profile"] = self._extract_profile(flow.credentials)
+            st.session_state["google_profile"] = profile
             st.session_state["auth_mode"] = AUTH_MODE_GOOGLE
             st.session_state.pop("auth_error", None)
             self._persist_auth_state()

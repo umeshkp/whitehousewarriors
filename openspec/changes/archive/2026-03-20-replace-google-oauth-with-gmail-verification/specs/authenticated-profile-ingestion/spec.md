@@ -1,13 +1,10 @@
-# authenticated-profile-ingestion Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change google-popup-login-auth. Update Purpose after archive.
-## Requirements
 ### Requirement: Normalize authenticated Google profile fields
 The system SHALL extract and normalize authenticated identity fields from Google tokens/userinfo including `sub`, `email`, and `name`.
 
 #### Scenario: Successful profile extraction
-- **WHEN** Google sign-in token exchange succeeds
+- **WHEN** OAuth token exchange succeeds
 - **THEN** the system stores normalized profile fields in session and marks user authenticated
 
 ### Requirement: Profile availability for downstream UI
@@ -30,6 +27,8 @@ The system SHALL fail authentication when required identity fields are missing a
 #### Scenario: Missing required identity field
 - **WHEN** Google response does not include required identity keys such as `sub` or `email`
 - **THEN** the system rejects login completion and prompts user to retry authentication
+
+## ADDED Requirements
 
 ### Requirement: Gmail-domain verification before authenticated-mode transition
 The system SHALL verify that normalized authenticated profile email ends with `@gmail.com` before transitioning the session to authenticated Google mode.
